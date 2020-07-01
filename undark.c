@@ -356,21 +356,21 @@ Changes:
 \------------------------------------------------------------------*/
 char to_signed_byte(unsigned char value) {
 	int signed_value = value;
-	if (value >> 7) signed_value |= -1 << 7;
+	if (value >> 7) signed_value |= -128; // -1 << 7;
 	return signed_value;
 }
 
 int to_signed_int( unsigned int value ) {
 	int signed_value = value;
 
-	if (value >> 15) signed_value |= -1 << 15;
+	if (value >> 15) signed_value |= -32768; // -1 << 15;
 	return signed_value;
 }
 
 long int to_signed_long( unsigned long int value ) {
 	long int signed_value = value;
 
-	if (value >> 31) signed_value |= -1 << 31;
+	if (value >> 31) signed_value |= -2147483648; // -1 << 31;
 	return signed_value;
 }
 
