@@ -113,7 +113,6 @@ struct sql_payload {
 	int cell_page_offset;
 	struct cell cells[PAYLOAD_CELLS_MAX+1];
 	uint32_t overflow_pages[OVERFLOW_PAGES_MAX+1];
-	char *mapped_data, *mapped_data_endpoint;
 };
 
 struct sqlite_leaf_header {
@@ -916,6 +915,7 @@ Changes:
 		int ovpi;
 		void *addr;
 
+		char *mapped_data, *mapped_data_endpoint;
 
 		DEBUG fprintf(stdout,"\n-DUMPING ROW------------------\n");
 		DEBUG hdump((unsigned char *)base, 16, "Dump_row starting data");
@@ -926,29 +926,32 @@ Changes:
 		}
 
 		if (payload->overflow_pages[0] == 0) {
-			payload->mapped_data = base;
-			payload->mapped_data_endpoint = data_endpoint;
+			mapped_data = base;
+			mapped_data_endpoint = data_endpoint;
 
 		} else {
-			payload->mapped_data = malloc( (payload->length +100) *sizeof(char) );
-			if ( !payload->mapped_data ) {
+			mapped_data = malloc( (payload->length +100) *sizeof(char) );
+
+			if ( !mapped_data ) {
 				fprintf(stderr,"%s:%d:ERROR: Cannot allocate %ld bytes for mapped data\n", FL, (long int)payload->length +100);
 				return -1;
 			}
+
 			DEBUG fprintf(stdout,"ALLOCATED %d bytes to mapped data\n", (int)(payload->length +100) );
-			if (!payload->mapped_data){ fprintf(stderr,"ERROR: Cannot allocate %d bytes for payload\n", (int)(payload->length +1)); return 0; }
-			memset( payload->mapped_data, 'X', payload->length +1 );
+
+			memset( mapped_data, 'X', payload->length +1 );
 
 			// load in the first, default page.
 			DEBUG fprintf(stdout,"Copying data for initial page\n");
-			memcpy(payload->mapped_data, base, data_endpoint -base );
-			payload->mapped_data_endpoint = payload->mapped_data +(data_endpoint -base -4);
-			//		DEBUG hdump( (unsigned char *)payload->mapped_data, payload->mapped_data_endpoint -payload->mapped_data +4  );
+// probably need a check here to avoid walking past end
+			memcpy(mapped_data, base, data_endpoint -base );
+			mapped_data_endpoint = mapped_data +(data_endpoint -base -4);
+			//		DEBUG hdump( (unsigned char *)mapped_data, mapped_data_endpoint -mapped_data +4  );
 
 			// Load in the overflow pages (if any)
 			ovpi = 0;
 			while (payload->overflow_pages[ovpi]) {
-				DEBUG fprintf(stdout,"Copying data from file to memory for page %d to offset [%d]\n", payload->overflow_pages[ovpi], (int)(payload->mapped_data_endpoint -payload->mapped_data));
+				DEBUG fprintf(stdout,"Copying data from file to memory for page %d to offset [%d]\n", payload->overflow_pages[ovpi], (int)(mapped_data_endpoint -mapped_data));
 
 				addr = g->db_origin +((payload->overflow_pages[ovpi]-1) *g->page_size) +4; //PLD:20141221-2240 segfault fix
 				if (( addr < (void *)g->db_origin) || ( addr+4 > (void *)g->db_end)) {
@@ -956,16 +959,17 @@ Changes:
 					return -1;
 				}
 
-				memcpy(payload->mapped_data_endpoint, addr, g->page_size -4);
-				payload->mapped_data_endpoint += g->page_size -4;
+// probably need a check here to avoid walking past end
+				memcpy(mapped_data_endpoint, addr, g->page_size -4);
+				mapped_data_endpoint += g->page_size -4;
 
-				//	DEBUG hdump( (unsigned char *)payload->mapped_data, payload->mapped_data_endpoint -payload->mapped_data );
+				//	DEBUG hdump( (unsigned char *)mapped_data, mapped_data_endpoint -mapped_data );
 
 				ovpi++;
 			}
 		}
 
-		DEBUG hdump((unsigned char *)payload->mapped_data, payload->mapped_data_endpoint -payload->mapped_data, "Payload mapped data" );
+		DEBUG hdump((unsigned char *)mapped_data, mapped_data_endpoint -mapped_data, "Payload mapped data" );
 
 		if (mode == DECODE_MODE_FREESPACE) {
 			t = 0;
@@ -979,36 +983,36 @@ Changes:
 			if (t>=0) { fprintf(stdout,",");
 				switch (payload->cells[t].t) {
 					case 0: fprintf(stdout,"NULL"); break;
-					case 1: fprintf(stdout,"x%d", to_signed_byte(*(payload->mapped_data +payload->cells[t].o)) ); break;
+					case 1: fprintf(stdout,"x%d", to_signed_byte(*(mapped_data +payload->cells[t].o)) ); break;
 					case 2: {
 								  uint16_t n;
-								  memcpy(&n, payload->mapped_data +payload->cells[t].o, 2 );
+								  memcpy(&n, mapped_data +payload->cells[t].o, 2 );
 								  fprintf(stdout,"%d" , to_signed_int(ntohs(n)));
 							  }
 							  break;
 
 					case 3: {
 								  uint32_t n;
-								  memcpy(&n, payload->mapped_data +payload->cells[t].o, 3 );
+								  memcpy(&n, mapped_data +payload->cells[t].o, 3 );
 								  fprintf(stdout,"%ld", to_signed_long(ntohl(n)));
 							  }
 							  break;
 
 					case 4: {
 								  uint32_t n;
-								  memcpy(&n, payload->mapped_data +payload->cells[t].o, 4 );
+								  memcpy(&n, mapped_data +payload->cells[t].o, 4 );
 								  fprintf(stdout,"%ld", to_signed_long(ntohl(n)));
 							  }
 							  break;
 
-					case 5: fprintf(stdout,"%d", ntohl(*(payload->mapped_data +payload->cells[t].o))); break;
-					case 6: fprintf(stdout,"%d", ntohl(*(payload->mapped_data +payload->cells[t].o))); break;
+					case 5: fprintf(stdout,"%d", ntohl(*(mapped_data +payload->cells[t].o))); break;
+					case 6: fprintf(stdout,"%d", ntohl(*(mapped_data +payload->cells[t].o))); break;
 					case 7: 
 							  {
 								  uint64_t n;
 								  uint64_t nn;
 								  double *zz;
-								  memcpy(&n, payload->mapped_data +payload->cells[t].o, 8 );
+								  memcpy(&n, mapped_data +payload->cells[t].o, 8 );
 								  nn = (double) undark_ntohll(n);
 //									hdump( &nn, 8, "\nFPPP: ");
 									zz = (double *)&nn;
@@ -1022,11 +1026,11 @@ Changes:
 							  if ( g->report_blobs) {
 								  if (payload->cells[t].s < g->blob_size_limit) {
 									  DEBUG fprintf(stdout,"%s:%d:DEBUG:Not Dumping data to blob file, keeping in CSV\n", FL );
-									  blob_dump((unsigned char *) (payload->mapped_data +payload->cells[t].o), payload->cells[t].s );
+									  blob_dump((unsigned char *) (mapped_data +payload->cells[t].o), payload->cells[t].s );
 								  } else {
 									  // dump the blob to a file.
 									  DEBUG fprintf(stdout,"%s:%d:DEBUG:Dumping data to %d.blob [%d bytes]\n", FL ,g->blob_count, payload->cells[t].s);
-									  blob_dump_to_file( g, (payload->mapped_data +payload->cells[t].o), payload->cells[t].s );
+									  blob_dump_to_file( g, (mapped_data +payload->cells[t].o), payload->cells[t].s );
 									  DEBUG fprintf(stdout,"\"%d.blob\"", g->blob_count);
 								  }
 							  }
@@ -1035,7 +1039,7 @@ Changes:
 
 					case 13:
 							  DEBUG fprintf(stdout,"%s:%d:DEBUG: Dumping text-13\n", FL );
-							  sqltdump( payload->mapped_data +payload->cells[t].o, payload->cells[t].s ); 
+							  sqltdump( mapped_data +payload->cells[t].o, payload->cells[t].s ); 
 							  break;
 					default:
 							  fprintf(stderr,"Invalid cell type '%d'", payload->cells[t].t);
@@ -1053,7 +1057,7 @@ Changes:
 		fprintf(stdout,"\n");
 		fflush(stdout);
 		if (payload->overflow_pages[0] != 0) {
-			free( payload->mapped_data );
+			free( mapped_data );
 		}
 
 		return 0;
