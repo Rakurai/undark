@@ -912,8 +912,6 @@ Changes:
 \------------------------------------------------------------------*/
 	int dump_row( struct globals *g, char *base, char *data_endpoint, struct sql_payload *payload, int mode ) {
 		int t = 0;
-		int ovpi;
-		void *addr;
 
 		char *mapped_data, *mapped_data_endpoint;
 
@@ -921,7 +919,7 @@ Changes:
 		DEBUG hdump((unsigned char *)base, 16, "Dump_row starting data");
 
 		if ( payload->length > g->db_size ) {
-			DEBUG fprintf(stdout,"%s:%d:ERROR: Nonsensical payload length of %ld requested, ignoring.\n", FL, (long int)payload->length);
+			fprintf(stderr,"%s:%d:ERROR: Nonsensical payload length of %llu requested, ignoring.\n", FL, payload->length);
 			return -1;
 		}
 
@@ -929,44 +927,50 @@ Changes:
 			mapped_data = base;
 			mapped_data_endpoint = data_endpoint;
 
-		} else {
-			mapped_data = malloc( (payload->length +100) *sizeof(char) );
+		}
+		else {
+			// calculate contiguous memory needed to map the base + overflow pages
+			uint64_t allocated_len = payload->length + 100;
+// check here, does this match up with data_endpoint - base?
+
+			for (int ovpi = 0; payload->overflow_pages[ovpi]; ovpi++)
+				allocated_len += g->page_size - 4;
+
+			mapped_data = malloc( allocated_len *sizeof(char) );
 
 			if ( !mapped_data ) {
-				fprintf(stderr,"%s:%d:ERROR: Cannot allocate %ld bytes for mapped data\n", FL, (long int)payload->length +100);
+				fprintf(stderr,"%s:%d:ERROR: Cannot allocate %llu bytes for mapped data\n", FL, allocated_len);
 				return -1;
 			}
 
-			DEBUG fprintf(stdout,"ALLOCATED %d bytes to mapped data\n", (int)(payload->length +100) );
+			DEBUG fprintf(stdout,"ALLOCATED %llu bytes to mapped data\n", allocated_len );
 
-			memset( mapped_data, 'X', payload->length +1 );
+			memset( mapped_data, 'X', allocated_len );
 
 			// load in the first, default page.
 			DEBUG fprintf(stdout,"Copying data for initial page\n");
-// probably need a check here to avoid walking past end
+
 			memcpy(mapped_data, base, data_endpoint -base );
 			mapped_data_endpoint = mapped_data +(data_endpoint -base -4);
 			//		DEBUG hdump( (unsigned char *)mapped_data, mapped_data_endpoint -mapped_data +4  );
 
 			// Load in the overflow pages (if any)
-			ovpi = 0;
-			while (payload->overflow_pages[ovpi]) {
+			for (int ovpi = 0; payload->overflow_pages[ovpi]; ovpi++) {
 				DEBUG fprintf(stdout,"Copying data from file to memory for page %d to offset [%d]\n", payload->overflow_pages[ovpi], (int)(mapped_data_endpoint -mapped_data));
 
-				addr = g->db_origin +((payload->overflow_pages[ovpi]-1) *g->page_size) +4; //PLD:20141221-2240 segfault fix
+				void *addr = g->db_origin +((payload->overflow_pages[ovpi]-1) *g->page_size) +4; //PLD:20141221-2240 segfault fix
 				if (( addr < (void *)g->db_origin) || ( addr+4 > (void *)g->db_end)) {
-					DEBUG fprintf(stdout,"%s:%d:dump_row:ERROR: page seek request outside of boundaries of file (%p < %p > %p)\n", FL, g->db_origin, addr, g->db_end);
+					fprintf(stderr,"%s:%d:dump_row:ERROR: page seek request outside of boundaries of file (%p < %p > %p)\n", FL, g->db_origin, addr, g->db_end);
 					return -1;
 				}
 
-// probably need a check here to avoid walking past end
 				memcpy(mapped_data_endpoint, addr, g->page_size -4);
 				mapped_data_endpoint += g->page_size -4;
 
 				//	DEBUG hdump( (unsigned char *)mapped_data, mapped_data_endpoint -mapped_data );
-
-				ovpi++;
 			}
+
+fprintf(stderr, "allocated %llu, mapped %ld\n", allocated_len, mapped_data_endpoint - mapped_data);
 		}
 
 		DEBUG hdump((unsigned char *)mapped_data, mapped_data_endpoint -mapped_data, "Payload mapped data" );
