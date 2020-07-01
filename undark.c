@@ -879,7 +879,7 @@ Changes:
 		return y;
 	}
 
-	uint64_t ntohll(uint64_t value) {
+	uint64_t undark_ntohll(uint64_t value) {
 		uint64_t t;
 //		hdump( &value, 8, "\nUxx: ");
 		if (1==ntohl(1)) {
@@ -1009,7 +1009,7 @@ Changes:
 								  uint64_t nn;
 								  double *zz;
 								  memcpy(&n, payload->mapped_data +payload->cells[t].o, 8 );
-								  nn = (double) ntohll(n);
+								  nn = (double) undark_ntohll(n);
 //									hdump( &nn, 8, "\nFPPP: ");
 									zz = (double *)&nn;
 								  fprintf(stdout,"%f",*zz); 
