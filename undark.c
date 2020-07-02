@@ -970,7 +970,7 @@ Changes:
 				//	DEBUG hdump( (unsigned char *)mapped_data, mapped_data_endpoint -mapped_data );
 			}
 
-fprintf(stderr, "allocated %llu, mapped %ld\n", allocated_len, mapped_data_endpoint - mapped_data);
+			DEBUG fprintf(stderr, "allocated %llu, mapped %ld\n", allocated_len, mapped_data_endpoint - mapped_data);
 		}
 
 		DEBUG hdump((unsigned char *)mapped_data, mapped_data_endpoint -mapped_data, "Payload mapped data" );
@@ -982,12 +982,12 @@ fprintf(stderr, "allocated %llu, mapped %ld\n", allocated_len, mapped_data_endpo
 		} else t = -1;
 
 		while (t <= payload->cell_count) {
-			DEBUG fprintf(stdout,"%s:%d:DEBUG: Cell[%d], Type:%d, size:%d, offset:%d\n", FL , t, payload->cells[t].t, payload->cells[t].s, payload->cells[t].o);
+			DEBUG fprintf(stdout,"%s:%d:DEBUG: Cell[%d], Type:%d, size:%d, offset:%d   ", FL , t, payload->cells[t].t, payload->cells[t].s, payload->cells[t].o);
 			if (t == -1) fprintf(stdout,"%ld", (long unsigned int) payload->rowid);
 			if (t>=0) { fprintf(stdout,",");
 				switch (payload->cells[t].t) {
 					case 0: fprintf(stdout,"NULL"); break;
-					case 1: fprintf(stdout,"x%d", to_signed_byte(*(mapped_data +payload->cells[t].o)) ); break;
+					case 1: fprintf(stdout,"%d", to_signed_byte(*(mapped_data +payload->cells[t].o)) ); break;
 					case 2: {
 								  uint16_t n;
 								  memcpy(&n, mapped_data +payload->cells[t].o, 2 );
@@ -1010,7 +1010,14 @@ fprintf(stderr, "allocated %llu, mapped %ld\n", allocated_len, mapped_data_endpo
 							  break;
 
 					case 5: fprintf(stdout,"%d", ntohl(*(mapped_data +payload->cells[t].o))); break;
-					case 6: fprintf(stdout,"%d", ntohl(*(mapped_data +payload->cells[t].o))); break;
+					case 6:
+							  {
+								  uint64_t n;
+								  memcpy(&n, mapped_data +payload->cells[t].o, 8 );
+								  uint64_t nn = undark_ntohll(n);
+								  fprintf(stdout,"%lld",nn); 
+							  }
+							  break;
 					case 7: 
 							  {
 								  uint64_t n;
@@ -1054,6 +1061,7 @@ fprintf(stderr, "allocated %llu, mapped %ld\n", allocated_len, mapped_data_endpo
 				} // switch cell type
 			}
 
+			DEBUG fprintf(stdout,"\n");
 			t++;
 
 		} // while decoding the cells
